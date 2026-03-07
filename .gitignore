@@ -1,0 +1,29 @@
+
+# environment
+.env
+
+# project documents
+USER FLOW.txt
+PRD.txt
+BACKEND_TODO.md
+
+# design folder
+UI Design/
+
+# python cache
+__pycache__/
+*.pyc
+*.pyo
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.idea/
+
+# virtual env
+venv/
+.venv/
+
+#vscode
+.vscode/
