@@ -15,6 +15,7 @@ from app.schemas.payment import (
     RazorpayCreateOrderResponse,
     RazorpayVerifyRequest,
 )
+from app.services.order_status import enforce_transition
 
 
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -47,6 +48,11 @@ def create_razorpay_order(
     if order.status == "Paid":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Order already paid"
+        )
+    if order.status != "Placed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot create payment for order in '{order.status}' state",
         )
 
     amount = Decimal(str(order.total_amount))
@@ -103,6 +109,11 @@ def verify_razorpay_payment(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Razorpay order mismatch"
         )
+    if order.status == "Paid":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Order already verified as paid",
+        )
 
     client = _razorpay_client()
     try:
@@ -118,6 +129,7 @@ def verify_razorpay_payment(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Payment verification failed"
         )
 
+    enforce_transition(order.status, "Paid")
     order.status = "Paid"
     order.payment_provider = "razorpay"
     order.razorpay_payment_id = payload.razorpay_payment_id

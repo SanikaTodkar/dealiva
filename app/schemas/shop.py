@@ -25,5 +25,10 @@ class ShopRead(ShopBase):
     id: int
     owner_id: int
     status: str
+    is_otp_verified: bool
     created_at: datetime
+
+
+class ShopOtpVerifyRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=6)
 

@@ -8,6 +8,7 @@ from app.models.order import Order
 from app.models.shop import Shop
 from app.models.user import User
 from app.schemas.shop import ShopRead
+from app.schemas.user import UserRead
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -32,6 +33,11 @@ def approve_shop(
     if not shop:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Shop not found"
+        )
+    if not shop.is_otp_verified:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Shop OTP not verified yet",
         )
     shop.status = "approved"
     db.add(shop)
@@ -80,4 +86,49 @@ def admin_dashboard(
         "total_orders": int(total_orders),
         "total_revenue": float(total_revenue),
     }
+
+
+@router.get("/customers", response_model=list[UserRead])
+def list_customers(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+) -> list[User]:
+    stmt = select(User).where(User.role == "customer").order_by(User.id.desc())
+    return list(db.scalars(stmt).all())
+
+
+@router.patch("/customers/{user_id}/block", response_model=UserRead)
+def block_customer(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+) -> User:
+    user = db.get(User, user_id)
+    if not user or user.role != "customer":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found"
+        )
+    user.is_blocked = True
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.patch("/customers/{user_id}/unblock", response_model=UserRead)
+def unblock_customer(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+) -> User:
+    user = db.get(User, user_id)
+    if not user or user.role != "customer":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found"
+        )
+    user.is_blocked = False
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
 

@@ -12,6 +12,11 @@ python-jose = {extras = ["cryptography"], version = "*"}
 passlib = {extras = ["bcrypt"], version = "*"}
 razorpay = "*"
 pydantic-settings = "*"
+bcrypt = "==4.0.1"
+openpyxl = "*"
+python-multipart = "*"
 
 [dev-packages]
 ruff = "*"
+alembic = "*"
+pytest = "*"

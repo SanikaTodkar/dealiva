@@ -34,6 +34,8 @@ def register(payload: UserCreate, db: Session = Depends(get_db)) -> User:
         email=payload.email.lower(),
         password=hash_password(payload.password),
         role=role,
+        mobile=payload.mobile,
+        address=payload.address,
         city=payload.city,
     )
     db.add(user)
@@ -48,6 +50,11 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
     if not user or not verify_password(payload.password, user.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
+        )
+    if user.is_blocked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User account is blocked",
         )
 
     if payload.role and payload.role.strip() != user.role:

@@ -1,18 +1,23 @@
+from collections import defaultdict
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_shop_owner
 from app.db.session import get_db
+from app.models.order_item import OrderItem
 from app.models.rating import Rating
 from app.models.shop import Shop
 from app.models.user import User
-from app.schemas.shop import ShopCreate, ShopRead, ShopUpdate
+from app.schemas.shop import ShopCreate, ShopOtpVerifyRequest, ShopRead, ShopUpdate
 from app.schemas.shop_public import ShopDetailRead as ShopDetailPublicRead
 from app.schemas.shop_public import ShopRead as ShopPublicRead
 from app.schemas.rating import ShopRatingsResponse, ShopRatingItem
 from app.models.product import Product
 from app.models.order import Order
+from app.services.shop_otp import generate_shop_otp, verify_shop_otp
 
 
 router = APIRouter(prefix="/shops", tags=["shops"])
@@ -153,6 +158,72 @@ def shop_dashboard(
     }
 
 
+@router.get("/dashboard/monthly-sales")
+def shop_dashboard_monthly_sales(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_shop_owner),
+) -> dict:
+    shop = db.scalar(select(Shop).where(Shop.owner_id == current_user.id))
+    if not shop:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Shop not found. Register your shop first.",
+        )
+
+    orders = db.scalars(
+        select(Order).where(
+            Order.shop_id == shop.id,
+            Order.status.in_(["Paid", "Completed"]),
+        )
+    ).all()
+
+    monthly = defaultdict(float)
+    for order in orders:
+        key = order.created_at.strftime("%Y-%m")
+        monthly[key] += float(order.total_amount)
+
+    series = [{"month": month, "revenue": revenue} for month, revenue in sorted(monthly.items())]
+    return {"monthly_sales": series}
+
+
+@router.get("/dashboard/top-selling-products")
+def shop_dashboard_top_selling_products(
+    limit: int = Query(default=5, ge=1, le=20),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_shop_owner),
+) -> dict:
+    shop = db.scalar(select(Shop).where(Shop.owner_id == current_user.id))
+    if not shop:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Shop not found. Register your shop first.",
+        )
+
+    rows = db.execute(
+        select(
+            Product.id,
+            Product.name,
+            func.sum(OrderItem.quantity).label("quantity_sold"),
+        )
+        .join(OrderItem, OrderItem.product_id == Product.id)
+        .join(Order, Order.id == OrderItem.order_id)
+        .where(
+            Product.shop_id == shop.id,
+            Order.status.in_(["Paid", "Completed"]),
+        )
+        .group_by(Product.id, Product.name)
+        .order_by(func.sum(OrderItem.quantity).desc())
+        .limit(limit)
+    ).all()
+
+    return {
+        "top_selling_products": [
+            {"product_id": pid, "product_name": name, "quantity_sold": int(qty or 0)}
+            for pid, name, qty in rows
+        ]
+    }
+
+
 @router.post("/register", response_model=ShopRead, status_code=status.HTTP_201_CREATED)
 def register_shop(
     payload: ShopCreate,
@@ -176,6 +247,45 @@ def register_shop(
     db.commit()
     db.refresh(shop)
     return shop
+
+
+@router.post("/otp/send")
+def send_shop_otp(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_shop_owner),
+) -> dict:
+    shop = db.scalar(select(Shop).where(Shop.owner_id == current_user.id))
+    if not shop:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Shop not found"
+        )
+    otp = generate_shop_otp(db, shop)
+    # For academic demo, returning OTP directly.
+    return {
+        "message": "OTP generated successfully",
+        "otp_code": otp.code,
+        "expires_at": otp.expires_at.isoformat(),
+    }
+
+
+@router.post("/otp/verify")
+def verify_shop_registration_otp(
+    payload: ShopOtpVerifyRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_shop_owner),
+) -> dict:
+    shop = db.scalar(select(Shop).where(Shop.owner_id == current_user.id))
+    if not shop:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Shop not found"
+        )
+
+    ok = verify_shop_otp(db, shop, payload.code)
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired OTP"
+        )
+    return {"message": "OTP verified successfully"}
 
 
 @router.get("/my-shop", response_model=ShopRead)

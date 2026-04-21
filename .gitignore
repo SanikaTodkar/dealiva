@@ -1,29 +1,37 @@
-
-# environment
-.env
-
-# project documents
-USER FLOW.txt
-PRD.txt
-BACKEND_TODO.md
-
-# design folder
-UI Design/
-
-# python cache
+# Python cache
 __pycache__/
 *.pyc
 *.pyo
-__pycache__/
-*.pyc
+*.pyd
+
+# Virtual environments
+venv/
+.env/
+.env.*
+
+# Environment variables
+.env
+
+# Pytest cache
 .pytest_cache/
-.ruff_cache/
-.mypy_cache/
+
+# Alembic (optional logs/cache)
+*.log
+
+# VS Code / IDE
+.vscode/
 .idea/
 
-# virtual env
-venv/
-.venv/
+# OS files
+.DS_Store
+Thumbs.db
 
-#vscode
-.vscode/
+
+# Coverage reports
+.coverage
+htmlcov/
+
+# Build files
+dist/
+build/
+*.egg-info/

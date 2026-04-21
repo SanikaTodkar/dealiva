@@ -1,6 +1,8 @@
 from decimal import Decimal
+from io import BytesIO
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from openpyxl import load_workbook
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -50,6 +52,8 @@ def create_product(
             detail="You can only add products to your own shop",
         )
 
+    discount_percent, final_price = calculate_discount(payload.expiry_date, payload.price)
+
     product = Product(
         shop_id=shop.id,
         name=payload.name,
@@ -58,6 +62,8 @@ def create_product(
         price=payload.price,
         stock=payload.stock,
         expiry_date=payload.expiry_date,
+        discount_percent=discount_percent,
+        final_price=final_price,
     )
     db.add(product)
     db.commit()
@@ -91,11 +97,105 @@ def update_product(
         product.stock = payload.stock
     if payload.expiry_date is not None:
         product.expiry_date = payload.expiry_date
+    price = Decimal(str(product.price))
+    discount_percent, final_price = calculate_discount(product.expiry_date, price)
+    product.discount_percent = discount_percent
+    product.final_price = final_price
 
     db.add(product)
     db.commit()
     db.refresh(product)
     return product
+
+
+@router.post("/bulk-upload", status_code=status.HTTP_201_CREATED)
+async def bulk_upload_products(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_shop_owner),
+) -> dict:
+    if not file.filename.lower().endswith((".xlsx", ".xlsm", ".xltx", ".xltm")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only Excel files are supported",
+        )
+
+    shop = _get_owner_shop(db, current_user.id)
+    content = await file.read()
+
+    try:
+        workbook = load_workbook(filename=BytesIO(content), data_only=True)
+        sheet = workbook.active
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid Excel file: {exc}",
+        )
+
+    rows = list(sheet.iter_rows(values_only=True))
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Excel file is empty"
+        )
+
+    headers = [str(h).strip().lower() if h else "" for h in rows[0]]
+    index = {h: i for i, h in enumerate(headers)}
+    required = {"name", "price", "stock"}
+    missing = sorted(required - set(index.keys()))
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Missing required columns: {missing}",
+        )
+
+    created = 0
+    errors: list[dict] = []
+    for row_num, row in enumerate(rows[1:], start=2):
+        try:
+            name = str(row[index["name"]]).strip() if row[index["name"]] is not None else ""
+            if not name:
+                raise ValueError("name is required")
+
+            price = Decimal(str(row[index["price"]]))
+            stock = int(row[index["stock"]])
+            description = (
+                str(row[index["description"]]).strip()
+                if "description" in index and row[index["description"]] is not None
+                else None
+            )
+            image_url = (
+                str(row[index["image_url"]]).strip()
+                if "image_url" in index and row[index["image_url"]] is not None
+                else None
+            )
+            expiry_date = (
+                row[index["expiry_date"]]
+                if "expiry_date" in index and row[index["expiry_date"]] is not None
+                else None
+            )
+            if expiry_date and hasattr(expiry_date, "date"):
+                expiry_date = expiry_date.date()
+
+            discount_percent, final_price = calculate_discount(expiry_date, price)
+            db.add(
+                Product(
+                    shop_id=shop.id,
+                    name=name,
+                    description=description,
+                    image_url=image_url,
+                    price=price,
+                    stock=stock,
+                    expiry_date=expiry_date,
+                    discount_percent=discount_percent,
+                    final_price=final_price,
+                )
+            )
+            created += 1
+        except Exception as exc:
+            errors.append({"row": row_num, "error": str(exc)})
+
+    db.commit()
+    return {"created_count": created, "error_count": len(errors), "errors": errors}
 
 
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)

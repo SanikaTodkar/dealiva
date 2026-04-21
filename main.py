@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import api_router
 from app.core.config import settings
-from app.db.init_db import init_db
 from app.routers.auth import router as auth_router
 from app.routers.cart import router as cart_router
 from app.routers.orders import router as orders_router
@@ -13,6 +12,7 @@ from app.routers.products import shop_products_router
 from app.routers.shops import router as shops_router
 from app.routers.ratings import router as ratings_router
 from app.routers.admin import router as admin_router
+from app.routers.recommendations import router as recommendations_router
 
 
 app = FastAPI(title="Dealiva API")
@@ -43,9 +43,5 @@ app.include_router(orders_router, prefix="/api")
 app.include_router(payments_router, prefix="/api")
 app.include_router(ratings_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
-
-
-@app.on_event("startup")
-def _startup() -> None:
-    init_db()
+app.include_router(recommendations_router, prefix="/api")
 

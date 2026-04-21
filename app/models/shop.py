@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -19,6 +19,9 @@ class Shop(Base):
     city: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, index=True, default="pending", server_default="pending"
+    )
+    is_otp_verified: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
     )
 
     created_at: Mapped[datetime] = mapped_column(

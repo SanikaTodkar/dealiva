@@ -15,6 +15,7 @@ from app.models.shop import Shop
 from app.models.user import User
 from app.schemas.order import OrderRead
 from app.schemas.order_shop import OrderShopRead, OrderStatusUpdate
+from app.services.order_status import enforce_transition
 
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -161,6 +162,7 @@ def update_order_status(
             status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
         )
 
+    enforce_transition(order.status, payload.status)
     order.status = payload.status
     db.add(order)
     db.commit()
