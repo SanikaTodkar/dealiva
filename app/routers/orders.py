@@ -3,19 +3,18 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.deps import require_customer, require_shop_owner
 from app.db.session import get_db
-from app.models.cart import Cart
-from app.models.cart_item import CartItem
-from app.models.order import Order
-from app.models.order_item import OrderItem
-from app.models.product import Product
+from app.models.order import Order, OrderStatus
+from app.schemas.order import OrderItemRead
 from app.models.shop import Shop
 from app.models.user import User
 from app.schemas.order import OrderRead
 from app.schemas.order_shop import OrderShopRead, OrderStatusUpdate
 from app.services.order_status import enforce_transition
+from app.services.order_service import create_order_service
 
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -24,86 +23,25 @@ def _order_to_shop_read(order: Order) -> OrderShopRead:
     return OrderShopRead(
         order_id=order.id,
         customer_id=order.user_id,
-        items=list(order.items),
+        items= [
+            OrderItemRead(
+                product_id = i.product_id,
+                quantity = i.quantity,
+                unit_price = Decimal(str(i.unit_price)),
+                line_total = Decimal(str(i.line_total)),
+            )
+            for i in order.items
+        ],
         total_amount=Decimal(str(order.total_amount)),
         status=order.status,
     )
 
-
-@router.post("/create", response_model=OrderRead, status_code=status.HTTP_201_CREATED)
+@router.post("/create", response_model= OrderRead)
 def create_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_customer),
-) -> Order:
-    cart = db.scalar(select(Cart).where(Cart.user_id == current_user.id))
-    if not cart or cart.shop_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Cart is empty"
-        )
-
-    stmt = (
-        select(CartItem, Product)
-        .join(Product, Product.id == CartItem.product_id)
-        .where(CartItem.cart_id == cart.id)
-    )
-    rows = db.execute(stmt).all()
-    if not rows:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Cart is empty"
-        )
-
-    # Validate stock + compute totals
-    total = Decimal("0.00")
-    items_to_create: list[OrderItem] = []
-    for cart_item, product in rows:
-        if cart_item.quantity > product.stock:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Not enough stock for product_id={product.id}",
-            )
-
-        unit_price = Decimal(str(product.price))
-        line_total = unit_price * cart_item.quantity
-        total += line_total
-        items_to_create.append(
-            OrderItem(
-                product_id=product.id,
-                quantity=cart_item.quantity,
-                unit_price=unit_price,
-                line_total=line_total,
-            )
-        )
-
-    order = Order(
-        user_id=current_user.id,
-        shop_id=cart.shop_id,
-        status="Placed",
-        total_amount=total,
-    )
-    db.add(order)
-    db.commit()
-    db.refresh(order)
-
-    for item in items_to_create:
-        item.order_id = order.id
-        db.add(item)
-
-    # Decrement stock
-    for cart_item, product in rows:
-        product.stock -= cart_item.quantity
-        db.add(product)
-
-    # Clear cart
-    for cart_item, _product in rows:
-        db.delete(cart_item)
-    cart.shop_id = None
-    db.add(cart)
-
-    db.commit()
-    loaded = db.scalars(
-        select(Order).where(Order.id == order.id).options(selectinload(Order.items))
-    ).unique().one()
-    return loaded
+):
+    return create_order_service(db, current_user)
 
 
 @router.get("/my-orders", response_model=list[OrderRead])
@@ -162,7 +100,7 @@ def update_order_status(
             status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
         )
 
-    enforce_transition(order.status, payload.status)
+    enforce_transition(OrderStatus(order.status), payload.status)
     order.status = payload.status
     db.add(order)
     db.commit()

@@ -1,10 +1,8 @@
 from decimal import Decimal
-from typing import Literal
-
 from pydantic import BaseModel, Field
 
 from app.schemas.order import OrderItemRead
-
+from app.core.enums import OrderStatus
 
 class OrderShopRead(BaseModel):
     order_id: int
@@ -15,5 +13,5 @@ class OrderShopRead(BaseModel):
 
 
 class OrderStatusUpdate(BaseModel):
-    status: Literal["Ready for Pickup", "Completed"] = Field(...)
+    status: OrderStatus
 

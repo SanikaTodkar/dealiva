@@ -29,6 +29,12 @@ DATABASE_URL=postgresql+psycopg2://USER:PASSWORD@HOST:5432/dealiva_db
 
 ## Run
 
+Apply migrations first:
+
+```bash
+pipenv run alembic upgrade head
+```
+
 ```bash
 pipenv run uvicorn main:app --reload
 ```

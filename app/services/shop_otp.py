@@ -20,6 +20,7 @@ def generate_shop_otp(db: Session, shop: Shop) -> ShopOtp:
 
 def verify_shop_otp(db: Session, shop: Shop, code: str) -> bool:
     now = datetime.now(timezone.utc)
+
     otp = db.scalar(
         select(ShopOtp)
         .where(
@@ -34,9 +35,14 @@ def verify_shop_otp(db: Session, shop: Shop, code: str) -> bool:
         return False
 
     otp.is_verified = True
-    shop.is_otp_verified = True
+    db.query(Shop).filter(Shop.id == shop.id).update({
+        Shop.is_otp_verified: True,
+        Shop.status: "approved",
+    })
+
     db.add(otp)
     db.add(shop)
     db.commit()
+    db.refresh(shop)
     return True
 

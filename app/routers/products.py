@@ -1,8 +1,11 @@
 from decimal import Decimal
 from io import BytesIO
+from datetime import datetime, date
 
+from fastapi import Query
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from openpyxl import load_workbook
+from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -33,9 +36,11 @@ def _get_owner_shop(db: Session, owner_id: int) -> Shop:
 def list_products(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_shop_owner),
+    limit: int = Query(10, le = 100),
+    offset: int = Query(0),
 ) -> list[Product]:
     shop = _get_owner_shop(db, current_user.id)
-    stmt = select(Product).where(Product.shop_id == shop.id).order_by(Product.id.desc())
+    stmt = select(Product).where(Product.shop_id == shop.id).order_by(Product.id.desc()).offset(offset).limit(limit)
     return list(db.scalars(stmt).all())
 
 
@@ -114,7 +119,7 @@ async def bulk_upload_products(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_shop_owner),
 ) -> dict:
-    if not file.filename.lower().endswith((".xlsx", ".xlsm", ".xltx", ".xltm")):
+    if not file.filename or not file.filename.lower().endswith((".xlsx", ".xlsm", ".xltx", ".xltm")):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only Excel files are supported",
@@ -126,6 +131,11 @@ async def bulk_upload_products(
     try:
         workbook = load_workbook(filename=BytesIO(content), data_only=True)
         sheet = workbook.active
+        if sheet is None or not isinstance(sheet, Worksheet):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Excel file has no valid active worksheet",
+            )
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -156,8 +166,19 @@ async def bulk_upload_products(
             if not name:
                 raise ValueError("name is required")
 
-            price = Decimal(str(row[index["price"]]))
-            stock = int(row[index["stock"]])
+            def safe_int(value) -> int:
+                if value is None:
+                    raise ValueError("Missing integer value")
+                return int(float(value))
+            
+            def safe_decimal(value) -> Decimal:
+                if value is None:
+                    raise ValueError("Missing decimal value..")
+                return Decimal(str(value))
+        
+            price = safe_decimal(row[index["price"]])
+            stock = safe_int(row[index["stock"]])
+
             description = (
                 str(row[index["description"]]).strip()
                 if "description" in index and row[index["description"]] is not None
@@ -173,8 +194,10 @@ async def bulk_upload_products(
                 if "expiry_date" in index and row[index["expiry_date"]] is not None
                 else None
             )
-            if expiry_date and hasattr(expiry_date, "date"):
+            if isinstance(expiry_date, datetime):
                 expiry_date = expiry_date.date()
+            elif not isinstance(expiry_date, date):
+                expiry_date = None
 
             discount_percent, final_price = calculate_discount(expiry_date, price)
             db.add(
@@ -231,7 +254,7 @@ def get_product(
 
 
 @shop_products_router.get("/shops/{shop_id}/products", response_model=list[ProductPublicRead])
-def list_shop_products(shop_id: int, db: Session = Depends(get_db)) -> list[Product]:
+def list_shop_products(shop_id: int, db: Session = Depends(get_db)) -> list[ProductPublicRead]:
     from datetime import date
 
     today = date.today()

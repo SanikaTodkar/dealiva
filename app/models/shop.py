@@ -1,10 +1,15 @@
 from datetime import datetime
-
+from typing import TYPE_CHECKING
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
+if TYPE_CHECKING:
+    from app.models.user import User
+    from app.models.product import Product
+    from app.models.order import Order
+    from app.models.rating import Rating
 
 class Shop(Base):
     __tablename__ = "shops"

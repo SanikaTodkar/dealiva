@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -18,8 +19,10 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 def list_shops_admin(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    limit: int = Query(10, le= 100),
+    offset: int = Query(0),
 ) -> list[Shop]:
-    stmt = select(Shop).order_by(Shop.id.desc())
+    stmt = select(Shop).offset(offset).limit(limit)
     return list(db.scalars(stmt).all())
 
 

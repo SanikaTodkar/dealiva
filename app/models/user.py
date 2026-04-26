@@ -1,10 +1,17 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.enums import UserRole
 from app.db.base import Base
 
+if TYPE_CHECKING:
+    from app.models.shop import Shop
+    from app.models.order import Order
+    from app.models.rating import Rating
+    from app.models.cart import Cart
 
 class User(Base):
     __tablename__ = "users"
@@ -13,7 +20,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True, index=True)
     password: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    role: Mapped[UserRole] = mapped_column(String(50), nullable=False, index=True)
     mobile: Mapped[str] = mapped_column(String(20), nullable=False)
     address: Mapped[str] = mapped_column(String(500), nullable=False)
     city: Mapped[str] = mapped_column(String(100), nullable=False, index=True)

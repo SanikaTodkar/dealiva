@@ -12,67 +12,26 @@ from app.models.product import Product
 from app.models.shop import Shop
 from app.models.user import User
 from app.schemas.cart import (
-    CartAddRequest,
     CartRead,
     CartRemoveRequest,
     CartUpdateQuantityRequest,
     ShopSummary,
 )
+from app.services.cart_service import add_to_cart_service
+from app.schemas.cart import CartAddRequest
 
 
 router = APIRouter(prefix="/cart", tags=["cart"])
 
-
-def _get_or_create_cart(db: Session, user_id: int) -> Cart:
-    cart = db.scalar(select(Cart).where(Cart.user_id == user_id))
-    if cart:
-        return cart
-    cart = Cart(user_id=user_id, shop_id=None)
-    db.add(cart)
-    db.commit()
-    db.refresh(cart)
-    return cart
-
-
-@router.post("/add", response_model=CartRead, status_code=status.HTTP_200_OK)
+@router.post("/add", response_model=CartRead)
 def add_to_cart(
     payload: CartAddRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_customer),
-) -> CartRead:
-    product = db.get(Product, payload.product_id)
-    if not product:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Product not found"
-        )
+):
+    cart = add_to_cart_service(db = db, user_id = current_user.id, product_id = payload.product_id, quantity = payload.quantity,)
 
-    cart = _get_or_create_cart(db, current_user.id)
-
-    # Enforce one-shop-per-cart
-    if cart.shop_id is None:
-        cart.shop_id = product.shop_id
-    elif cart.shop_id != product.shop_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cart can only contain products from one shop",
-        )
-
-    item = db.scalar(
-        select(CartItem).where(
-            CartItem.cart_id == cart.id, CartItem.product_id == payload.product_id
-        )
-    )
-    if item:
-        item.quantity += payload.quantity
-    else:
-        item = CartItem(cart_id=cart.id, product_id=payload.product_id, quantity=payload.quantity)
-        db.add(item)
-
-    db.add(cart)
-    db.commit()
-
-    return get_cart(db=db, current_user=current_user)
-
+    return get_cart(db = db, current_user = current_user)
 
 @router.post("/remove", response_model=CartRead)
 def remove_from_cart(

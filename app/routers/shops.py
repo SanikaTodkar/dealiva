@@ -1,6 +1,7 @@
 from collections import defaultdict
 from datetime import date
 
+from fastapi import Query
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -27,6 +28,8 @@ router = APIRouter(prefix="/shops", tags=["shops"])
 def list_shops(
     city: str | None = Query(default=None),
     db: Session = Depends(get_db),
+    limit: int = Query(10, le = 100),
+    offset: int = Query(0),
 ) -> list[ShopPublicRead]:
     stmt = (
         select(
@@ -40,6 +43,8 @@ def list_shops(
         .where(Shop.status == "approved")
         .group_by(Shop.id, Shop.name, Shop.city)
         .order_by(Shop.id.desc())
+        .offset(offset)
+        .limit(limit)
     )
 
     if city:
@@ -48,6 +53,17 @@ def list_shops(
     rows = db.execute(stmt).mappings().all()
     return [ShopPublicRead(**dict(r)) for r in rows]
 
+@router.get("/my-shop", response_model=ShopRead)
+def my_shop(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_shop_owner),
+) -> Shop:
+    shop = db.scalar(select(Shop).where(Shop.owner_id == current_user.id))
+    if not shop:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Shop not found"
+        )
+    return shop
 
 @router.get("/{shop_id}", response_model=ShopDetailPublicRead)
 def get_shop_details(shop_id: int, db: Session = Depends(get_db)) -> ShopDetailPublicRead:
@@ -260,10 +276,8 @@ def send_shop_otp(
             status_code=status.HTTP_404_NOT_FOUND, detail="Shop not found"
         )
     otp = generate_shop_otp(db, shop)
-    # For academic demo, returning OTP directly.
     return {
         "message": "OTP generated successfully",
-        "otp_code": otp.code,
         "expires_at": otp.expires_at.isoformat(),
     }
 
@@ -286,19 +300,6 @@ def verify_shop_registration_otp(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired OTP"
         )
     return {"message": "OTP verified successfully"}
-
-
-@router.get("/my-shop", response_model=ShopRead)
-def my_shop(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_shop_owner),
-) -> Shop:
-    shop = db.scalar(select(Shop).where(Shop.owner_id == current_user.id))
-    if not shop:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Shop not found"
-        )
-    return shop
 
 
 @router.put("/update", response_model=ShopRead)

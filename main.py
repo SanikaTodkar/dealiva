@@ -25,23 +25,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(api_router)
-app.include_router(auth_router)
-app.include_router(shops_router)
-app.include_router(products_router)
-app.include_router(cart_router)
-app.include_router(orders_router)
-app.include_router(payments_router)
+API_PREFIX = "/api"
 
-# React frontend API prefix
-app.include_router(auth_router, prefix="/api")
-app.include_router(shops_router, prefix="/api")
-app.include_router(products_router, prefix="/api")
-app.include_router(shop_products_router, prefix="/api")
-app.include_router(cart_router, prefix="/api")
-app.include_router(orders_router, prefix="/api")
-app.include_router(payments_router, prefix="/api")
-app.include_router(ratings_router, prefix="/api")
-app.include_router(admin_router, prefix="/api")
-app.include_router(recommendations_router, prefix="/api")
+app.include_router(auth_router, prefix=API_PREFIX)
+app.include_router(shops_router, prefix=API_PREFIX)
+app.include_router(products_router, prefix=API_PREFIX)
+app.include_router(shop_products_router, prefix=API_PREFIX)
+app.include_router(cart_router, prefix=API_PREFIX)
+app.include_router(orders_router, prefix=API_PREFIX)
+app.include_router(payments_router, prefix=API_PREFIX)
+app.include_router(ratings_router, prefix=API_PREFIX)
+app.include_router(admin_router, prefix=API_PREFIX)
+app.include_router(recommendations_router, prefix=API_PREFIX)
 
