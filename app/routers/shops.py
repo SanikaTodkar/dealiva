@@ -65,65 +65,6 @@ def my_shop(
         )
     return shop
 
-@router.get("/{shop_id}", response_model=ShopDetailPublicRead)
-def get_shop_details(shop_id: int, db: Session = Depends(get_db)) -> ShopDetailPublicRead:
-    stmt = (
-        select(
-            Shop.id.label("id"),
-            Shop.name.label("shop_name"),
-            Shop.address.label("address"),
-            Shop.city.label("city"),
-            func.coalesce(func.avg(Rating.rating), 0.0).label("rating"),
-        )
-        .select_from(Shop)
-        .outerjoin(Rating, Rating.shop_id == Shop.id)
-        .where(Shop.id == shop_id, Shop.status == "approved")
-        .group_by(Shop.id, Shop.name, Shop.address, Shop.city)
-    )
-    row = db.execute(stmt).mappings().one_or_none()
-    if not row:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Shop not found"
-        )
-    return ShopDetailPublicRead(**dict(row))
-
-
-@router.get("/{shop_id}/ratings", response_model=ShopRatingsResponse)
-def get_shop_ratings(shop_id: int, db: Session = Depends(get_db)) -> ShopRatingsResponse:
-    shop = db.get(Shop, shop_id)
-    if not shop or shop.status != "approved":
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Shop not found"
-        )
-
-    agg_row = db.execute(
-        select(
-            func.coalesce(func.avg(Rating.rating), 0.0),
-            func.count(Rating.id),
-        ).where(Rating.shop_id == shop_id)
-    ).one()
-    average_rating = float(agg_row[0]) if agg_row[1] > 0 else 0.0
-    total_ratings = int(agg_row[1])
-
-    rows = db.execute(
-        select(User.name, Rating.rating, Rating.feedback)
-        .join(User, User.id == Rating.user_id)
-        .where(Rating.shop_id == shop_id)
-        .order_by(Rating.created_at.desc())
-    ).all()
-
-    ratings = [
-        ShopRatingItem(user_name=name, rating=rating, feedback=feedback)
-        for name, rating, feedback in rows
-    ]
-
-    return ShopRatingsResponse(
-        average_rating=average_rating,
-        total_ratings=total_ratings,
-        ratings=ratings,
-    )
-
-
 @router.get("/dashboard")
 def shop_dashboard(
     db: Session = Depends(get_db),
@@ -238,6 +179,64 @@ def shop_dashboard_top_selling_products(
             for pid, name, qty in rows
         ]
     }
+
+@router.get("/{shop_id}", response_model=ShopDetailPublicRead)
+def get_shop_details(shop_id: int, db: Session = Depends(get_db)) -> ShopDetailPublicRead:
+    stmt = (
+        select(
+            Shop.id.label("id"),
+            Shop.name.label("shop_name"),
+            Shop.address.label("address"),
+            Shop.city.label("city"),
+            func.coalesce(func.avg(Rating.rating), 0.0).label("rating"),
+        )
+        .select_from(Shop)
+        .outerjoin(Rating, Rating.shop_id == Shop.id)
+        .where(Shop.id == shop_id, Shop.status == "approved")
+        .group_by(Shop.id, Shop.name, Shop.address, Shop.city)
+    )
+    row = db.execute(stmt).mappings().one_or_none()
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Shop not found"
+        )
+    return ShopDetailPublicRead(**dict(row))
+
+
+@router.get("/{shop_id}/ratings", response_model=ShopRatingsResponse)
+def get_shop_ratings(shop_id: int, db: Session = Depends(get_db)) -> ShopRatingsResponse:
+    shop = db.get(Shop, shop_id)
+    if not shop or shop.status != "approved":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Shop not found"
+        )
+
+    agg_row = db.execute(
+        select(
+            func.coalesce(func.avg(Rating.rating), 0.0),
+            func.count(Rating.id),
+        ).where(Rating.shop_id == shop_id)
+    ).one()
+    average_rating = float(agg_row[0]) if agg_row[1] > 0 else 0.0
+    total_ratings = int(agg_row[1])
+
+    rows = db.execute(
+        select(User.name, Rating.rating, Rating.feedback)
+        .join(User, User.id == Rating.user_id)
+        .where(Rating.shop_id == shop_id)
+        .order_by(Rating.created_at.desc())
+    ).all()
+
+    ratings = [
+        ShopRatingItem(user_name=name, rating=rating, feedback=feedback)
+        for name, rating, feedback in rows
+    ]
+
+    return ShopRatingsResponse(
+        average_rating=average_rating,
+        total_ratings=total_ratings,
+        ratings=ratings,
+    )
 
 
 @router.post("/register", response_model=ShopRead, status_code=status.HTTP_201_CREATED)
